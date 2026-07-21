@@ -33,8 +33,6 @@ Chicken-Gas-Monitoring-ESPNow/
 │   ├── receiver.ino
 │   └── README.md
 │
-├── images/
-│
 ├── LICENSE
 │
 └── README.md
