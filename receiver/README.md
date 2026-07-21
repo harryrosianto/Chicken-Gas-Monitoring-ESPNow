@@ -26,8 +26,8 @@ It performs the following tasks:
 │      ESP32 Transmitter       │
 │                              │
 │ MQ6                          │
-│ MQ7        ─────────────►     │
-│ DHT22                         │
+│ MQ7                          │
+│ DHT22                        │
 └──────────────────────────────┘
 
                 │
