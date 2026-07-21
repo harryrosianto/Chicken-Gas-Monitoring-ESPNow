@@ -1,94 +1,84 @@
 # ESP32 Transmitter
 
-## Description
+## Overview
 
-The transmitter node collects environmental data inside the chicken coop.
-
-Sensors:
-
-- MQ6 (LPG)
-- MQ7 (CO)
-- DHT22
-
-After processing, data are transmitted to the receiver using ESP-NOW every 2 seconds.
+The transmitter node is responsible for acquiring environmental data inside the chicken coop, processing the sensor readings, controlling the actuators, and sending the processed data wirelessly to the receiver using the ESP-NOW protocol.
 
 ---
 
-## Hardware
+# Hardware Specification
 
-| Device | Pin |
-|---------|----|
+| Component | GPIO |
+|----------|------|
 | MQ6 | GPIO32 |
 | MQ7 | GPIO33 |
 | DHT22 | GPIO4 |
 | Fan Relay | GPIO18 |
 | Valve Relay | GPIO19 |
-| LCD SDA | GPIO21 |
-| LCD SCL | GPIO22 |
+| LCD I2C SDA | GPIO21 |
+| LCD I2C SCL | GPIO22 |
 
 ---
 
-## Data Packet
+# Sensor Processing
 
-```cpp
-typedef struct
-{
-    float lpg;
-    float co;
-    float temp;
+## MQ6 (LPG)
 
-    bool gasAlarm;
-    bool fanStatus;
-    bool valveStatus;
-
-    uint32_t packetNumber;
-
-} SensorData;
-```
-
----
-
-## Sensor Workflow
-
-```
-MQ6
-MQ7
-DHT22
-    │
-    ▼
-Read ADC
-    │
-Calibration
-    │
-Gas Decision
-    │
-Relay Control
-    │
-ESP-NOW Send
-```
-
----
-
-## MQ6 Calibration
-
-MQ6 was calibrated using a commercial gas detector.
-
-Linear calibration equation:
-
-```
-ppm = ((ADC - 1968) × 1131.2) / 1498
-```
-
----
-
-## MQ7 Calibration
-
-MQ7 uses piecewise linear interpolation.
+The MQ6 sensor was calibrated against a commercial gas detector.
 
 Calibration points:
 
+| ADC | LPG |
+|----:|----:|
+|1968|0 ppm|
+|3148|884 ppm|
+
+The slope is
+
+$$
+m=\frac{884-0}{3148-1968}
+$$
+
+$$
+m=0.749
+$$
+
+Therefore,
+
+$$
+LPG_{ppm}=0.749(ADC-1968)
+$$
+
+or
+
+$$
+LPG_{ppm}=\frac{884}{1180}(ADC-1968)
+$$
+
+Arduino implementation
+
+```cpp
+float mq6ToPPM(int adc)
+{
+    float ppm = (adc - 1968) * 884.0 / 1180.0;
+
+    if(ppm < 0)
+        ppm = 0;
+
+    return ppm;
+}
+```
+
+---
+
+## MQ7 (CO)
+
+The MQ7 sensor response is nonlinear. Therefore, piecewise linear interpolation is used.
+
+Calibration dataset
+
 | ADC | CO (ppm) |
-|-----|----------|
+|----:|---------:|
 |215|0|
 |217|11|
 |220|14|
@@ -108,67 +98,124 @@ Calibration points:
 |262|121|
 |281|197|
 
----
+For every ADC value located between two calibration points
 
-## Relay Logic
+$$
+(ADC_1,C_1)
+$$
 
-Gas exceeds threshold
+and
 
-↓
+$$
+(ADC_2,C_2)
+$$
 
-Fan ON
+the CO concentration is estimated using linear interpolation
 
-Valve CLOSED
+$$
+C=C_1+\frac{(ADC-ADC_1)(C_2-C_1)}{ADC_2-ADC_1}
+$$
 
-Otherwise
+where
 
-↓
-
-Fan OFF
-
-Valve OPEN
-
----
-
-## LCD Display
-
-Displays
-
-- Countdown
-- LPG concentration
-- CO concentration
-- Temperature
-- Send Status
-- Packet Number
+- \(C\) = estimated CO concentration (ppm)
+- \(ADC\) = measured ADC value
+- \(ADC_1,ADC_2\) = surrounding calibration ADC values
+- \(C_1,C_2\) = calibrated CO concentrations
 
 ---
 
-## Sending Interval
+## Temperature
 
-2 Seconds
+Temperature is measured using the DHT22 sensor.
+
+If calibration is required,
+
+$$
+T=T_{raw}+Offset
+$$
+
+Example
+
+$$
+T=T_{raw}+0.5
+$$
 
 ---
 
-## Communication
+# Alarm Logic
+
+The gas alarm is activated whenever
+
+$$
+LPG \ge LPG_{limit}
+$$
+
+where
+
+$$
+LPG_{limit}=884\ ppm
+$$
+
+The relay is reset when
+
+$$
+LPG \le LPG_{reset}
+$$
+
+This hysteresis prevents relay oscillation.
+
+---
+
+# Data Packet
+
+The transmitted packet consists of
+
+$$
+Packet=
+\{
+LPG,
+CO,
+Temperature,
+GasAlarm,
+FanStatus,
+ValveStatus,
+PacketNumber
+\}
+$$
+
+---
+
+# Communication
 
 Protocol
 
-ESP-NOW
+- ESP-NOW
 
-Channel
+Transmission interval
 
-Same as receiver WiFi channel
+$$
+t=2\ seconds
+$$
 
 ---
 
-## Output
+# Workflow
 
-Every transmission contains
-
-- LPG
-- CO
-- Temperature
-- Alarm Status
-- Fan Status
-- Valve Status
-- Packet Number
+```text
+MQ6
+MQ7
+DHT22
+   │
+   ▼
+Read Sensors
+   │
+   ▼
+Calibration
+   │
+   ▼
+Relay Control
+   │
+   ▼
+ESP-NOW Transmission
+```
